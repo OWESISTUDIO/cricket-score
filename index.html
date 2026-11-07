@@ -229,6 +229,7 @@ function bowlingTeam(n) { return battingTeam(n === 0 ? 1 : 0); }
 function newBat(n) { return { n: n, r: 0, b: 0, f: 0, s: 0, out: "" }; }
 
 let mode = null; // "nb" | "b" | "lb" | "wd": the next run button is an extra
+let nbBye = false; // on a no ball: the runs were byes, not off the bat
 
 function renderPlay() {
   const i = I();
@@ -253,11 +254,14 @@ function renderPlay() {
       '<button class="x' + (mode === "b" ? " on" : "") + '" data-m="b">Bye</button><button class="x' + (mode === "lb" ? " on" : "") + '" data-m="lb">Leg bye</button>' +
       '<button class="w" id="wkt">WICKET</button><button class="u" id="swap">Strike badlein</button><button class="u" id="chb">Bowler badlein</button>' +
     '</div><div class="mode">' + modeText() + "</div>" +
+    (mode === "nb" ? '<div class="seg2" style="margin-bottom:6px"><button id="nbBat" class="' + (nbBye ? "" : "on") + '">Bat se laga</button><button id="nbBye" class="' + (nbBye ? "on" : "") + '">Bat se nahi (bye)</button></div>' : "") +
     '<div class="tools"><button id="msg">Screen par message</button><button id="ren">Naam theek karein</button></div></div>') +
     linkCard();
 
   document.querySelectorAll("[data-r]").forEach((b) => b.onclick = () => runs(+b.getAttribute("data-r")));
-  document.querySelectorAll("[data-m]").forEach((b) => b.onclick = () => { const m = b.getAttribute("data-m"); mode = mode === m ? null : m; render(); });
+  document.querySelectorAll("[data-m]").forEach((b) => b.onclick = () => { const m = b.getAttribute("data-m"); mode = mode === m ? null : m; nbBye = false; render(); });
+  if ($("nbBat")) $("nbBat").onclick = () => { nbBye = false; render(); };
+  if ($("nbBye")) $("nbBye").onclick = () => { nbBye = true; render(); };
   if ($("undo")) $("undo").onclick = undo;
   if ($("wkt")) $("wkt").onclick = wicket;
   if ($("swap")) $("swap").onclick = () => { snap(); const t = i.st; i.st = i.ns; i.ns = t; push(); render(); };
@@ -293,6 +297,10 @@ function runs(n) {
   if (mode === "wd") {
     legal = false; i.runs += 1 + n; i.ext += 1 + n; bw.r += 1 + n; label = "Wd" + (n ? "+" + n : "");
     // a wide keeps a free hit going
+  } else if (mode === "nb" && nbBye) {
+    // No ball, not off the bat: the runs are byes, not the bowler's.
+    legal = false; i.runs += 1 + n; i.ext += 1 + n; bw.r += 1; bt.b += 1;
+    label = "Nb+" + n + "b"; i.fh = true;
   } else if (mode === "nb") {
     legal = false; i.runs += 1 + n; i.ext += 1; bw.r += 1 + n; bt.r += n; bt.b += 1;
     if (n === 4) bt.f++; if (n === 6) bt.s++;
@@ -307,16 +315,21 @@ function runs(n) {
   i.over.push(label);
   if (n % 2 === 1) swap(i);
   S.fx = null;
-  if ((mode === null || mode === "nb") && (n === 4 || n === 6)) fx(n === 4 ? "FOUR" : "SIX");
+  if ((mode === null || (mode === "nb" && !nbBye)) && (n === 4 || n === 6)) fx(n === 4 ? "FOUR" : "SIX");
   else if (mode === "nb") fx("FREE");
-  mode = null;
+  mode = null; nbBye = false;
   afterBall(legal);
 }
 
 async function wicket() {
   const i = I(); if (!i || i.end) return;
-  const kinds = ["Bowled", "Caught", "LBW", "Run out", "Stumped", "Hit wicket"];
-  const k = await askChoice("Kaise out hua?" + (i.fh ? " (FREE HIT: sirf run out hota hai)" : ""), kinds, true);
+  // On a no ball or a free hit only a run out counts; on a wide also stumped / hit wicket.
+  let kinds = ["Bowled", "Caught", "LBW", "Run out", "Stumped", "Hit wicket"];
+  let note = "";
+  if (mode === "nb") { kinds = ["Run out"]; note = " (No ball par sirf run out)"; }
+  else if (i.fh) { kinds = ["Run out"]; note = " (FREE HIT: sirf run out)"; }
+  else if (mode === "wd") { kinds = ["Stumped", "Run out", "Hit wicket"]; note = " (Wide par)"; }
+  const k = await askChoice("Kaise out hua?" + note, kinds, true);
   if (k == null) return;
   const how = kinds[k];
   let outIdx = i.st, ranRuns = 0;
@@ -335,7 +348,7 @@ async function wicket() {
   if (wasWd) { i.runs += 1; i.ext += 1; bw.r += 1; }
   if (wasNb) { i.runs += 1; i.ext += 1; bw.r += 1; }
   if (!wasWd) bt.b += 1;
-  i.runs += ranRuns; if (!wasWd) bt.r += ranRuns; bw.r += ranRuns;
+  i.runs += ranRuns; if (!wasWd) bt.r += ranRuns; else i.ext += ranRuns; bw.r += ranRuns;
   if (legal) { i.balls++; bw.b++; }
   const out = i.bats[outIdx];
   out.out = how;
@@ -343,7 +356,7 @@ async function wicket() {
   if (how !== "Run out") bw.w++;
   i.over.push("W");
   if (!wasNb) i.fh = false;
-  mode = null;
+  mode = null; nbBye = false;
   // Who ends up where after the runs they ran.
   if (ranRuns % 2 === 1) swap(i);
   const outAtStrike = i.st === outIdx;
@@ -402,7 +415,7 @@ async function changeBowler(cancel) {
 function undo() {
   if (!H.length) return alert("Undo ke liye kuch nahi.");
   S = JSON.parse(H.pop());
-  S.fx = null; mode = null;
+  S.fx = null; mode = null; nbBye = false;
   push(); render();
 }
 
