@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Scoreboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Roboto+Condensed:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0a1a33;
+    --navy2: #12294f;
+    --gold: #ffc21a;
+    --red: #e3262f;
+    --green: #17a34a;
+    --white: #ffffff;
+    --muted: #b7c4dc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  body.demo { background: linear-gradient(160deg, #4f8a3c, #2f5d23); }
+  body { font-family: "Roboto Condensed", Arial, sans-serif; color: var(--white); }
+
+  .wrap { position: absolute; left: 2.2vw; right: 2.2vw; bottom: 2.4vw; display: none; }
+  .wrap.on { display: block; }
+
+  /* Info line above the bar: target, need, result, message */
+  .top { display: flex; justify-content: center; margin-bottom: 0.45vw; }
+  .chip {
+    background: var(--gold); color: var(--navy); font-family: Oswald, sans-serif;
+    font-weight: 600; font-size: 1.55vw; letter-spacing: 0.03em;
+    padding: 0.25vw 1.4vw; border-radius: 0.4vw 0.4vw 0 0; text-transform: uppercase;
+    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+  }
+  .chip:empty { display: none; }
+  .chip.res { background: var(--green); color: #fff; }
+
+  .bar {
+    display: flex; align-items: stretch; height: 5.6vw;
+    background: var(--navy); border-radius: 0.5vw; overflow: hidden;
+    box-shadow: 0 0.4vw 1.6vw rgba(0,0,0,0.45);
+    border-bottom: 0.25vw solid var(--gold);
+  }
+  .seg { display: flex; flex-direction: column; justify-content: center; padding: 0 1.2vw; min-width: 0; }
+  .seg + .seg { border-left: 0.12vw solid rgba(255,255,255,0.12); }
+
+  .teams { background: var(--navy2); width: 16vw; }
+  .teams .bat { font-family: Oswald, sans-serif; font-weight: 700; font-size: 1.85vw; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
+  .teams .vs { font-size: 1.2vw; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+
+  .score { background: var(--gold); color: var(--navy); width: 15vw; align-items: center; }
+  .score .big { font-family: Oswald, sans-serif; font-weight: 700; font-size: 3.1vw; line-height: 1; }
+  .score .ov { font-weight: 700; font-size: 1.25vw; margin-top: 0.15vw; }
+
+  .batters { flex: 1.3; }
+  .prow { display: flex; align-items: baseline; gap: 0.6vw; font-size: 1.6vw; line-height: 1.3; }
+  .prow .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .prow.on .nm { color: var(--white); font-weight: 700; }
+  .prow.on .nm::before { content: "\25B6"; color: var(--gold); font-size: 0.9vw; margin-right: 0.45vw; vertical-align: 0.15vw; }
+  .prow .rn { font-family: Oswald, sans-serif; font-weight: 600; font-size: 1.75vw; }
+  .prow .bl { color: var(--muted); font-size: 1.2vw; min-width: 3vw; }
+
+  .bowler { flex: 1.5; }
+  .brow { display: flex; align-items: baseline; gap: 0.6vw; font-size: 1.5vw; }
+  .brow .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
+  .brow .fig { font-family: Oswald, sans-serif; font-weight: 600; font-size: 1.6vw; }
+  .brow .bo { color: var(--muted); font-size: 1.2vw; }
+  .balls { display: flex; gap: 0.35vw; margin-top: 0.3vw; align-items: center; }
+  .balls .lbl { font-size: 0.95vw; color: var(--muted); text-transform: uppercase; margin-right: 0.2vw; }
+  .ball {
+    min-width: 2vw; height: 2vw; padding: 0 0.35vw; border-radius: 1vw;
+    background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center;
+    font-family: Oswald, sans-serif; font-weight: 600; font-size: 1.05vw;
+  }
+  .ball.b4 { background: #1f6fe0; }
+  .ball.b6 { background: var(--green); }
+  .ball.w { background: var(--red); }
+  .ball.x { background: #7a5bd6; }
+
+  .rate { width: 13vw; background: var(--navy2); align-items: center; text-align: center; }
+  .rate .k { font-size: 1vw; color: var(--muted); text-transform: uppercase; }
+  .rate .v { font-family: Oswald, sans-serif; font-weight: 600; font-size: 1.7vw; line-height: 1.1; }
+
+  .live { position: absolute; top: 1.8vw; left: 2.2vw; display: none; align-items: center; gap: 0.5vw;
+    background: var(--red); padding: 0.25vw 0.8vw; border-radius: 0.3vw;
+    font-family: Oswald, sans-serif; font-weight: 600; font-size: 1.2vw; letter-spacing: 0.08em; }
+  .live.on { display: flex; }
+  .live i { width: 0.7vw; height: 0.7vw; border-radius: 50%; background: #fff; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: 0.2; } }
+
+  /* FOUR / SIX / WICKET banner */
+  .fx { position: absolute; left: 50%; bottom: 11vw; transform: translateX(-50%) scale(0.4); opacity: 0;
+    font-family: Oswald, sans-serif; font-weight: 700; font-size: 6vw; letter-spacing: 0.08em;
+    padding: 0.3vw 3vw; border-radius: 0.6vw; color: #fff; text-shadow: 0 0.3vw 1vw rgba(0,0,0,0.4);
+    pointer-events: none; white-space: nowrap; }
+  .fx.FOUR { background: #1f6fe0; }
+  .fx.SIX { background: var(--green); }
+  .fx.WICKET { background: var(--red); }
+  .fx.FREE { background: #7a5bd6; font-size: 4vw; }
+  .fx.go { animation: pop 3.2s ease forwards; }
+  @keyframes pop {
+    0% { opacity: 0; transform: translateX(-50%) scale(0.4); }
+    12% { opacity: 1; transform: translateX(-50%) scale(1.08); }
+    20% { transform: translateX(-50%) scale(1); }
+    85% { opacity: 1; transform: translateX(-50%) scale(1); }
+    100% { opacity: 0; transform: translateX(-50%) scale(0.9); }
+  }
+
+  .wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 2vw; color: #fff; text-shadow: 0 0 0.6vw #000; }
+  .wait.off { display: none; }
+</style>
+</head>
+<body>
+<div class="live" id="live"><i></i>LIVE</div>
+<div class="wait" id="wait">Score ka intezar...</div>
+<div class="fx" id="fx"></div>
+
+<div class="wrap" id="wrap">
+  <div class="top"><div class="chip" id="chip"></div></div>
+  <div class="bar">
+    <div class="seg teams"><div class="bat" id="bat"></div><div class="vs" id="vs"></div></div>
+    <div class="seg score"><div class="big" id="sc"></div><div class="ov" id="ov"></div></div>
+    <div class="seg batters" id="batters"></div>
+    <div class="seg bowler">
+      <div class="brow"><span class="nm" id="bn"></span><span class="fig" id="bf"></span><span class="bo" id="bo"></span></div>
+      <div class="balls" id="balls"></div>
+    </div>
+    <div class="seg rate" id="rate"></div>
+  </div>
+</div>
+
+<script src="mqtt.min.js"></script>
+<script src="sync.js"></script>
+<script>
+  const q = new URLSearchParams(location.search);
+  const code = q.get("t");
+  if (q.get("bg") === "1") document.body.classList.add("demo");
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  let lastFx = null;
+
+  function ballClass(l) {
+    if (l === "W" || l.startsWith("W")) return "w";
+    if (l === "4") return "b4";
+    if (l === "6") return "b6";
+    if (/^(Wd|Nb|\d+b|\d+lb)/.test(l)) return "x";
+    return "";
+  }
+
+  function render(v) {
+    $("wait").classList.add("off");
+    $("wrap").classList.add("on");
+    $("live").classList.toggle("on", !!v.live);
+    $("bat").textContent = v.bt || "";
+    $("vs").textContent = v.bw ? "vs " + v.bw : "";
+    $("sc").textContent = v.r + "-" + v.w;
+    $("ov").textContent = v.o + (v.ovl ? " / " + v.ovl : "") + " OV";
+
+    const ps = (v.ps || []).map((p) =>
+      '<div class="prow' + (p.on ? " on" : "") + '"><span class="nm">' + esc(p.n) +
+      '</span><span class="rn">' + p.r + '</span><span class="bl">(' + p.b + ")</span></div>").join("");
+    $("batters").innerHTML = ps;
+
+    $("bn").textContent = v.bo ? v.bo.n : "";
+    $("bf").textContent = v.bo ? v.bo.f : "";
+    $("bo").textContent = v.bo ? "(" + v.bo.o + ")" : "";
+    $("balls").innerHTML = '<span class="lbl">' + esc(v.ol || "") + "</span>" +
+      (v.ob || []).map((l) => '<span class="ball ' + ballClass(l) + '">' + esc(l) + "</span>").join("");
+
+    let rate = "";
+    if (v.inn === 2 && v.tgt) {
+      rate = '<div class="k">Target</div><div class="v">' + v.tgt + "</div>" +
+        '<div class="k">RRR ' + esc(v.rrr) + "</div>";
+    } else {
+      rate = '<div class="k">Run rate</div><div class="v">' + esc(v.crr) + "</div>" +
+        (v.proj ? '<div class="k">Proj ' + v.proj + "</div>" : "");
+    }
+    $("rate").innerHTML = rate;
+
+    const chip = $("chip");
+    chip.classList.toggle("res", !!v.res);
+    chip.textContent = v.res || v.msg || v.info || "";
+
+    if (v.fx) {
+      if (lastFx !== null && v.fx.id !== lastFx) {
+        const el = $("fx");
+        el.className = "fx";
+        void el.offsetWidth;
+        el.textContent = v.fx.k === "FREE" ? "FREE HIT" : v.fx.k + "!";
+        el.className = "fx " + v.fx.k + " go";
+      }
+      lastFx = v.fx.id;
+    } else if (lastFx === null) {
+      lastFx = 0;
+    }
+  }
+
+  if (!code) {
+    $("wait").textContent = "Link mein match code nahi hai (?t=...)";
+  } else {
+    CricSync.subscriber(code, render);
+  }
+</script>
+</body>
+</html>
