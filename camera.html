@@ -67,7 +67,21 @@
   async function awake() {
     try { if ("wakeLock" in navigator) lock = await navigator.wakeLock.request("screen"); } catch (e) {}
   }
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") awake(); });
+  // Coming back from another app (Streamlabs): keep the screen on and,
+  // if the phone stopped the camera meanwhile, start it again.
+  function cameraDead() {
+    const t = stream && stream.getVideoTracks()[0];
+    return !t || t.readyState === "ended" || t.muted || $("v").paused;
+  }
+  async function revive() {
+    if (!started) return;
+    awake();
+    if (cameraDead()) { try { await camera(); } catch (e) {} }
+  }
+  let started = false;
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") revive(); });
+  window.addEventListener("focus", revive);
+  setInterval(() => { if (started && document.visibilityState === "visible" && cameraDead()) revive(); }, 3000);
 
   async function full() {
     try { await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
@@ -80,6 +94,7 @@
       await full();
       await camera();
       await awake();
+      started = true;
       $("start").style.display = "none";
       $("rot").classList.add("armed");
     } catch (e) {
