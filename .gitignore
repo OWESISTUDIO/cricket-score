@@ -1,0 +1,7 @@
+node_modules/
+stream.key
+secret.txt
+creds.json
+*.flv
+*.log
+cloudflared.exe

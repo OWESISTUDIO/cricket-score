@@ -5,86 +5,294 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
 <title>Live Camera</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Roboto+Condensed:wght@500;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
-  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
-
-  /* The scoreboard is always drawn landscape. When the screen stays portrait
-     (auto-rotate off) but the phone is held sideways, it is turned 90 degrees
-     so it still reads left to right for the viewer. */
-  iframe { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: 0; background: transparent; pointer-events: none; }
+  /* The camera is only a source for the canvas; what the canvas shows is what goes live. */
+  video { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+  canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: contain; background: #000; }
+  /* Screen did not rotate but the phone is held sideways: turn the picture. */
   @media (orientation: portrait) {
-    iframe { top: 50%; left: 50%; width: 100vh; height: 100vw; transform: translate(-50%, -50%) rotate(var(--deg, 90deg)); }
+    canvas { top: 50%; left: 50%; width: 100vh; height: 100vw; transform: translate(-50%, -50%) rotate(var(--deg, 90deg)); }
   }
 
   .start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 14px; padding: 24px; text-align: center; background: #0a1a33; z-index: 10; }
   .start h1 { font-size: 22px; }
   .start p { font-size: 15px; color: #b7c4dc; line-height: 1.5; max-width: 460px; }
-  .start button { border: 0; border-radius: 14px; padding: 16px 28px; font-size: 19px; font-weight: 800; background: #ffc21a; color: #0a1a33; }
+  .start button, .sheet .go { border: 0; border-radius: 14px; padding: 16px 28px; font-size: 19px; font-weight: 800; background: #ffc21a; color: #0a1a33; }
   .err { color: #ff8a8f !important; }
 
   .hint { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9;
     background: rgba(10,26,51,.88); border: 2px solid #ffc21a; border-radius: 14px; padding: 14px 20px;
     font-size: 18px; font-weight: 700; text-align: center; pointer-events: none; display: none; }
   .hint.on { display: block; }
-  @media (orientation: portrait) { .hint { transform: translate(-50%, -50%) rotate(var(--deg, 90deg)); } }
 
   .ctl { position: fixed; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5;
     opacity: 0; transition: opacity .3s; pointer-events: none; }
   .ctl.on { opacity: 1; pointer-events: auto; }
-  .ctl button { border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 700; background: rgba(0,0,0,.65); color: #fff; }
+  .ctl button { border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 700; background: rgba(0,0,0,.7); color: #fff; }
+  .ctl button.yt { background: #e3262f; }
+
+  .pill { position: fixed; left: 12px; bottom: 12px; z-index: 6; background: rgba(0,0,0,.72); border-radius: 999px;
+    padding: 7px 12px; font-size: 13px; font-weight: 700; display: none; align-items: center; gap: 7px; max-width: 80vw; }
+  .pill.on { display: flex; }
+  .pill i { width: 9px; height: 9px; border-radius: 50%; background: #999; flex: none; }
+  .pill.ok i { background: #2ee66b; } .pill.bad i { background: #e3262f; } .pill.wait i { background: #ffc21a; }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 20; display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal.on { display: flex; }
+  .sheet { background: #0a1a33; border: 1px solid #2a4370; border-radius: 16px; padding: 18px; width: 100%; max-width: 520px; max-height: 92vh; overflow: auto; }
+  .sheet h3 { font-size: 18px; margin-bottom: 8px; }
+  .sheet p { font-size: 14px; color: #b7c4dc; line-height: 1.45; margin-bottom: 10px; }
+  .sheet input { width: 100%; font-size: 15px; padding: 11px; border-radius: 10px; border: 1.5px solid #3a5585; background: #fff; color: #0a1a33; margin-bottom: 12px; }
+  .sheet .row { display: flex; gap: 10px; }
+  .sheet .row button { flex: 1; }
+  .sheet .stop { border: 0; border-radius: 14px; padding: 16px; font-size: 17px; font-weight: 800; background: #e3262f; color: #fff; }
+  .sheet .light { border: 0; border-radius: 14px; padding: 14px; font-size: 16px; font-weight: 700; background: #2a4370; color: #fff; }
 </style>
 </head>
 <body>
 <video id="v" autoplay playsinline muted></video>
-<iframe id="ov" title="Scoreboard" allowtransparency="true"></iframe>
+<canvas id="cv" width="1280" height="720"></canvas>
 
 <div class="ctl" id="ctl">
+  <button class="yt" id="ytBtn">YouTube Live</button>
   <button id="flip">Camera badlein</button>
-  <button id="turn">Scoreboard ulta hai? Ghumayein</button>
+  <button id="turn">Ulta hai? Ghumayein</button>
   <button id="full">Full screen</button>
 </div>
+<div class="pill" id="pill"><i></i><span id="pillT"></span></div>
 <div class="hint" id="hint">Full screen ke liye<br>screen par kahin bhi tap karein</div>
+
+<div class="modal" id="modal"><div class="sheet" id="sheet">
+  <h3>YouTube Live</h3>
+  <p>Laptop par <b>Start-Live</b> chalayein. Wahan jo <b>LIVE CODE</b> aaye (wss://... se shuru), wo yahan paste karein.</p>
+  <input id="relay" placeholder="wss://....trycloudflare.com/live?k=..." autocomplete="off" autocapitalize="off" spellcheck="false">
+  <div class="row"><button class="go" id="liveGo">Live shuru</button><button class="stop" id="liveStop">Live band</button></div>
+  <p id="liveMsg" style="margin-top:10px"></p>
+  <button class="light" id="closeM" style="width:100%">Wapas</button>
+</div></div>
 
 <div class="start" id="start">
   <h1>Live camera + scoreboard</h1>
-  <p>Shuru dabayein aur camera ki ijazat dein.<br>
-     Screen par tap karne se "Camera badlein" ka button aata hai.</p>
+  <p>Shuru dabayein, camera aur mic ki ijazat dein.<br>
+     Screen par tap karne se buttons aate hain (YouTube Live, Camera badlein).</p>
   <button id="go">Shuru</button>
   <p id="msg"></p>
 </div>
 
+<script src="mqtt.min.js"></script>
+<script src="sync.js"></script>
 <script>
   const q = new URLSearchParams(location.search);
   const code = q.get("t");
   const $ = (id) => document.getElementById(id);
+  const cv = $("cv"), cx = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
   let facing = "environment", stream = null, started = false;
+  let score = null, fxSeen = null, fxAt = 0, fxKind = "";
 
   if (!code) {
     $("msg").textContent = "Link mein match code nahi hai. Scorer page se 'Camera link' copy karein.";
     $("msg").className = "err"; $("go").style.display = "none";
   } else {
-    $("ov").src = "overlay.html?t=" + encodeURIComponent(code);
+    CricSync.subscriber(code, (v) => {
+      if (v.fx) {
+        if (fxSeen !== null && v.fx.id !== fxSeen) { fxAt = performance.now(); fxKind = v.fx.k; }
+        fxSeen = v.fx.id;
+      } else if (fxSeen === null) fxSeen = 0;
+      score = v;
+    });
   }
 
-  /* ---- which way is up when the screen did not rotate ---- */
-  let side = 1;   // +1: phone turned left (the usual way), -1: turned right
-  let flip = 1;   // the "Ghumayein" button turns it the other way
+  /* ---------- which way is up when the screen did not rotate ---------- */
+  let side = 1, flip = 1;
   try { flip = localStorage.getItem("cam.flip") === "-1" ? -1 : 1; } catch (e) {}
-  function setDeg() { document.documentElement.style.setProperty("--deg", (90 * side * flip) + "deg"); }
+  const deg = () => 90 * side * flip;
+  function setDeg() { document.documentElement.style.setProperty("--deg", deg() + "deg"); }
   setDeg();
   window.addEventListener("devicemotion", (e) => {
     const g = e.accelerationIncludingGravity;
     if (!g || g.x == null) return;
-    // Gravity tells which edge is down even with auto-rotate off.
     const s = g.x > 6 ? 1 : g.x < -6 ? -1 : side;
     if (s !== side) { side = s; setDeg(); }
   });
 
-  /* ---- camera ---- */
+  /* ---------- drawing: camera + scoreboard into one picture ---------- */
+  const C = { navy: "#0a1a33", navy2: "#12294f", gold: "#ffc21a", red: "#e3262f", green: "#17a34a", blue: "#1f6fe0", purple: "#7a5bd6", muted: "#b7c4dc" };
+  const u = W / 100;
+  function rr(x, y, w, h, r, fill, corners) {
+    const [a, b, c2, d] = corners || [r, r, r, r];
+    cx.beginPath();
+    cx.moveTo(x + a, y); cx.lineTo(x + w - b, y); cx.quadraticCurveTo(x + w, y, x + w, y + b);
+    cx.lineTo(x + w, y + h - c2); cx.quadraticCurveTo(x + w, y + h, x + w - c2, y + h);
+    cx.lineTo(x + d, y + h); cx.quadraticCurveTo(x, y + h, x, y + h - d);
+    cx.lineTo(x, y + a); cx.quadraticCurveTo(x, y, x + a, y); cx.closePath();
+    if (fill) { cx.fillStyle = fill; cx.fill(); }
+  }
+  function fit(s, max) {
+    s = String(s == null ? "" : s);
+    if (cx.measureText(s).width <= max) return s;
+    while (s.length > 1 && cx.measureText(s + "…").width > max) s = s.slice(0, -1);
+    return s + "…";
+  }
+  function text(s, x, y, font, color, align, max) {
+    cx.font = font; cx.fillStyle = color; cx.textAlign = align || "left"; cx.textBaseline = "alphabetic";
+    cx.fillText(max ? fit(s, max) : String(s), x, y);
+  }
+  const OS = (w, px) => w + " " + px + "px Oswald, 'Arial Narrow', Arial, sans-serif";
+  const RC = (w, px) => w + " " + px + "px 'Roboto Condensed', 'Arial Narrow', Arial, sans-serif";
+
+  function drawCamera() {
+    const v = $("v");
+    cx.fillStyle = "#000"; cx.fillRect(0, 0, W, H);
+    if (!v.videoWidth) return;
+    const vw = v.videoWidth, vh = v.videoHeight;
+    cx.save();
+    cx.translate(W / 2, H / 2);
+    let sw = vw, sh = vh;
+    if (vh > vw) { cx.rotate((-deg() * Math.PI) / 180); sw = vh; sh = vw; } // sideways frames from a portrait screen
+    if (facing === "user") cx.scale(-1, 1);
+    const k = Math.max(W / sw, H / sh); // cover
+    cx.drawImage(v, (-vw * k) / 2, (-vh * k) / 2, vw * k, vh * k);
+    cx.restore();
+  }
+
+  function ballColor(l) {
+    if (l.startsWith("W") && !l.startsWith("Wd")) return C.red;
+    if (l === "4") return C.blue;
+    if (l === "6") return C.green;
+    if (/^(Wd|Nb|\d+b|\d+lb)/.test(l)) return C.purple;
+    return "rgba(255,255,255,0.16)";
+  }
+
+  function drawBoard(v, now) {
+    if (v.live) {
+      rr(2.2 * u, 1.8 * u, 6 * u, 2.3 * u, 0.3 * u, C.red);
+      cx.globalAlpha = Math.floor(now / 600) % 2 ? 0.25 : 1;
+      cx.beginPath(); cx.arc(3.1 * u, 2.95 * u, 0.36 * u, 0, Math.PI * 2); cx.fillStyle = "#fff"; cx.fill();
+      cx.globalAlpha = 1;
+      text("LIVE", 3.8 * u, 3.45 * u, OS(600, 1.3 * u), "#fff");
+    }
+
+    const x0 = 2.2 * u, wt = W - 4.4 * u, bh = 5.6 * u, y0 = H - 2.4 * u - bh;
+
+    const chip = v.res || v.msg || v.info || "";
+    if (chip) {
+      cx.font = OS(600, 1.55 * u);
+      const label = fit(String(chip).toUpperCase(), 80 * u);
+      const cw = cx.measureText(label).width + 2.8 * u, ch = 2.4 * u;
+      rr(W / 2 - cw / 2, y0 - 0.45 * u - ch + 0.45 * u, cw, ch, 0, v.res ? C.green : C.gold, [0.4 * u, 0.4 * u, 0, 0]);
+      text(label, W / 2, y0 - 0.65 * u, OS(600, 1.55 * u), v.res ? "#fff" : C.navy, "center");
+    }
+
+    cx.save();
+    cx.shadowColor = "rgba(0,0,0,0.45)"; cx.shadowBlur = 1.6 * u; cx.shadowOffsetY = 0.4 * u;
+    rr(x0, y0, wt, bh, 0.5 * u, C.navy);
+    cx.restore();
+    cx.save();
+    rr(x0, y0, wt, bh, 0.5 * u); cx.clip();
+
+    const rest = wt - 44 * u;
+    const segs = [16 * u, 15 * u, (rest * 1.3) / 2.8, (rest * 1.5) / 2.8, 13 * u];
+    const xs = []; let acc = x0; segs.forEach((w) => { xs.push(acc); acc += w; });
+    const pad = 1.2 * u;
+
+    // teams
+    cx.fillStyle = C.navy2; cx.fillRect(xs[0], y0, segs[0], bh);
+    text(String(v.bt || "").toUpperCase(), xs[0] + pad, y0 + bh * 0.5, OS(700, 1.85 * u), "#fff", "left", segs[0] - 2 * pad);
+    text(v.bw ? ("VS " + v.bw).toUpperCase() : "", xs[0] + pad, y0 + bh * 0.8, RC(500, 1.2 * u), C.muted, "left", segs[0] - 2 * pad);
+
+    // score
+    cx.fillStyle = C.gold; cx.fillRect(xs[1], y0, segs[1], bh);
+    text(v.r + "-" + v.w, xs[1] + segs[1] / 2, y0 + bh * 0.6, OS(700, 3.1 * u), C.navy, "center");
+    text(v.o + (v.ovl ? " / " + v.ovl : "") + " OV", xs[1] + segs[1] / 2, y0 + bh * 0.88, RC(700, 1.25 * u), C.navy, "center");
+
+    // batters
+    const bx = xs[2], bw = segs[2], end = bx + bw - pad;
+    (v.ps || []).forEach((p, k) => {
+      const y = y0 + bh * (k === 0 ? 0.42 : 0.82);
+      let nx = bx + pad;
+      if (p.on) { text("▶", nx, y - 0.1 * u, RC(700, 0.95 * u), C.gold); nx += 1.4 * u; }
+      text(p.n, nx, y, RC(p.on ? 700 : 500, 1.6 * u), p.on ? "#fff" : C.muted, "left", end - 6.2 * u - nx);
+      text("(" + p.b + ")", end, y, RC(500, 1.2 * u), C.muted, "right");
+      text(String(p.r), end - 3.4 * u, y, OS(600, 1.75 * u), "#fff", "right");
+    });
+
+    // bowler + this over
+    const wx = xs[3], ww = segs[3], wend = wx + ww - pad;
+    if (v.bo) {
+      const y = y0 + bh * 0.4;
+      cx.font = RC(500, 1.2 * u); const ow = cx.measureText("(" + v.bo.o + ")").width;
+      text("(" + v.bo.o + ")", wend, y, RC(500, 1.2 * u), C.muted, "right");
+      cx.font = OS(600, 1.6 * u); const fw = cx.measureText(v.bo.f).width;
+      text(v.bo.f, wend - ow - 0.6 * u, y, OS(600, 1.6 * u), "#fff", "right");
+      text(v.bo.n, wx + pad, y, RC(700, 1.5 * u), "#fff", "left", ww - 2 * pad - ow - fw - 1.4 * u);
+    }
+    {
+      const cy = y0 + bh * 0.72; let x = wx + pad;
+      if (v.ol) { cx.font = RC(500, 0.95 * u); const lab = v.ol.toUpperCase(); text(lab, x, cy + 0.35 * u, RC(500, 0.95 * u), C.muted); x += cx.measureText(lab).width + 0.6 * u; }
+      (v.ob || []).forEach((l) => {
+        cx.font = OS(600, 1.05 * u);
+        const w = Math.max(2 * u, cx.measureText(l).width + 0.8 * u);
+        if (x + w > wend + 0.2 * u) return;
+        rr(x, cy - u, w, 2 * u, u, ballColor(l));
+        text(l, x + w / 2, cy + 0.38 * u, OS(600, 1.05 * u), "#fff", "center");
+        x += w + 0.35 * u;
+      });
+    }
+
+    // rate / target
+    cx.fillStyle = C.navy2; cx.fillRect(xs[4], y0, segs[4], bh);
+    const rx = xs[4] + segs[4] / 2;
+    if (v.inn === 2 && v.tgt) {
+      text("TARGET", rx, y0 + bh * 0.3, RC(500, 1 * u), C.muted, "center");
+      text(String(v.tgt), rx, y0 + bh * 0.66, OS(600, 1.7 * u), "#fff", "center");
+      text("RRR " + (v.rrr || "-"), rx, y0 + bh * 0.9, RC(500, 1 * u), C.muted, "center");
+    } else {
+      text("RUN RATE", rx, y0 + bh * 0.3, RC(500, 1 * u), C.muted, "center");
+      text(String(v.crr || "0.00"), rx, y0 + bh * 0.66, OS(600, 1.7 * u), "#fff", "center");
+      if (v.proj) text("PROJ " + v.proj, rx, y0 + bh * 0.9, RC(500, 1 * u), C.muted, "center");
+    }
+
+    // dividers + gold line
+    cx.fillStyle = "rgba(255,255,255,0.12)";
+    for (let k = 1; k < xs.length; k++) cx.fillRect(xs[k], y0, 0.12 * u, bh);
+    cx.fillStyle = C.gold; cx.fillRect(x0, y0 + bh - 0.25 * u, wt, 0.25 * u);
+    cx.restore();
+  }
+
+  function drawFx(now) {
+    const t = (now - fxAt) / 3200;
+    if (!fxKind || t < 0 || t > 1) return;
+    const scale = t < 0.12 ? 0.4 + (t / 0.12) * 0.68 : t < 0.2 ? 1.08 - ((t - 0.12) / 0.08) * 0.08 : t > 0.85 ? 1 - ((t - 0.85) / 0.15) * 0.1 : 1;
+    const alpha = t < 0.12 ? t / 0.12 : t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1;
+    const label = fxKind === "FREE" ? "FREE HIT" : fxKind + "!";
+    const size = (fxKind === "FREE" ? 4 : 6) * u;
+    const bg = { FOUR: C.blue, SIX: C.green, WICKET: C.red, FREE: C.purple }[fxKind] || C.navy;
+    cx.save();
+    cx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    cx.translate(W / 2, H - 11 * u - size * 0.6);
+    cx.scale(scale, scale);
+    cx.font = OS(700, size);
+    const w = cx.measureText(label).width + 6 * u, h = size * 1.25;
+    rr(-w / 2, -h / 2, w, h, 0.6 * u, bg);
+    text(label, 0, size * 0.36, OS(700, size), "#fff", "center");
+    cx.restore();
+  }
+
+  function frame() {
+    const now = performance.now();
+    drawCamera();
+    if (score) { drawBoard(score, now); drawFx(now); }
+    else if (code) text("Score ka intezar...", W / 2, H / 2, RC(700, 2 * u), "#fff", "center");
+  }
+  setInterval(frame, 1000 / 30);
+
+  /* ---------- camera ---------- */
   async function camera() {
     if (stream) stream.getTracks().forEach((t) => t.stop());
     stream = await navigator.mediaDevices.getUserMedia({
@@ -93,7 +301,6 @@
     });
     const v = $("v");
     v.srcObject = stream;
-    v.style.transform = facing === "user" ? "scaleX(-1)" : "";
     await v.play().catch(() => {});
   }
   function cameraDead() {
@@ -101,11 +308,9 @@
     return !t || t.readyState === "ended" || t.muted || $("v").paused;
   }
 
-  /* ---- screen on, full screen, landscape ---- */
-  async function awake() {
-    try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch (e) {}
-  }
-  function isFull() { return !!document.fullscreenElement; }
+  /* ---------- screen on, full screen, landscape ---------- */
+  async function awake() { try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch (e) {} }
+  const isFull = () => !!document.fullscreenElement;
   async function full() {
     try { if (!isFull()) await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
     try { await screen.orientation.lock("landscape"); } catch (e) {}
@@ -131,17 +336,11 @@
     }
   }
   $("go").onclick = () => begin(true);
-
-  // Camera allowed before: start by itself, one tap then makes it full screen.
   (async () => {
     if (!code) return;
-    try {
-      const p = await navigator.permissions.query({ name: "camera" });
-      if (p.state === "granted") begin(false);
-    } catch (e) {}
+    try { const p = await navigator.permissions.query({ name: "camera" }); if (p.state === "granted") begin(false); } catch (e) {}
   })();
 
-  /* ---- back from another app: keep it running ---- */
   async function revive() {
     if (!started) return;
     awake();
@@ -151,26 +350,124 @@
   window.addEventListener("focus", revive);
   setInterval(() => { if (started && document.visibilityState === "visible" && cameraDead()) revive(); }, 3000);
 
-  /* ---- taps ---- */
+  /* ---------- YouTube live through the laptop ---------- */
+  let want = false, ws = null, rec = null, mic = null, outStream = null, retry = null, liveSince = 0, lastError = "";
+  try { $("relay").value = localStorage.getItem("cam.relay") || ""; } catch (e) {}
+
+  function pill(state, msg) {
+    const p = $("pill");
+    p.className = "pill on " + state;
+    $("pillT").textContent = msg;
+    $("liveMsg").textContent = msg;
+  }
+
+  async function micTrack() {
+    try {
+      mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
+      return mic.getAudioTracks()[0];
+    } catch (e) {
+      // No mic: send silence, YouTube still wants a sound track.
+      const ac = new AudioContext();
+      const o = ac.createOscillator(), g = ac.createGain(); g.gain.value = 0;
+      const d = ac.createMediaStreamDestination(); o.connect(g); g.connect(d); o.start();
+      return d.stream.getAudioTracks()[0];
+    }
+  }
+
+  function pickType() {
+    const list = ["video/webm;codecs=h264,opus", "video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm"];
+    return list.find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+  }
+
+  function stopRec() {
+    try { if (rec && rec.state !== "inactive") rec.stop(); } catch (e) {}
+    rec = null;
+  }
+
+  function connect() {
+    clearTimeout(retry);
+    if (!want) return;
+    const url = $("relay").value.trim();
+    pill("wait", "Laptop se jur raha hai...");
+    try { ws = new WebSocket(url); } catch (e) { pill("bad", "Live code ghalat hai. Laptop wala poora code paste karein."); want = false; return; }
+    ws.binaryType = "arraybuffer";
+    const me = ws;
+    ws.onopen = () => {
+      if (ws !== me) return;
+      const type = pickType();
+      rec = new MediaRecorder(outStream, Object.assign({ videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }, type ? { mimeType: type } : {}));
+      rec.ondataavailable = (e) => { if (e.data && e.data.size && me.readyState === 1) me.send(e.data); };
+      rec.start(500);
+      pill("wait", "YouTube ko bhej raha hai...");
+    };
+    ws.onmessage = (e) => {
+      if (typeof e.data !== "string") return;
+      try {
+        const m = JSON.parse(e.data);
+        if (m.error) { lastError = m.error; pill("bad", m.error); }
+        else if (m.live) {
+          if (!liveSince) liveSince = Date.now();
+          const slow = me.bufferedAmount > 3000000;
+          pill(slow ? "wait" : "ok", (slow ? "Internet slow hai - " : "YouTube par LIVE - ") + m.time.split(".")[0]);
+        }
+      } catch (err) {}
+    };
+    ws.onclose = (e) => {
+      if (ws !== me) return;
+      stopRec();
+      if (e.code === 4001) { pill("bad", "Live code ghalat hai. Laptop par jo code hai wohi paste karein."); want = false; return; }
+      if (want) {
+        pill("bad", lastError ? lastError + " (dobara koshish...)" : "Rabta toota - dobara jur raha hai...");
+        lastError = "";
+        retry = setTimeout(connect, 2500);
+      }
+    };
+    ws.onerror = () => {};
+  }
+
+  async function goLive() {
+    const url = $("relay").value.trim();
+    if (!/^wss?:\/\//.test(url)) { pill("bad", "Pehle laptop wala LIVE CODE paste karein (wss:// se shuru)."); return; }
+    try { localStorage.setItem("cam.relay", url); } catch (e) {}
+    if (!started) { pill("bad", "Pehle camera shuru karein."); return; }
+    if (!window.MediaRecorder) { pill("bad", "Ye browser live nahi kar sakta. Chrome istemal karein."); return; }
+    want = true;
+    if (!outStream) {
+      outStream = cv.captureStream(30);
+      outStream.addTrack(await micTrack());
+    }
+    connect();
+    $("modal").classList.remove("on");
+  }
+  function endLive() {
+    want = false; clearTimeout(retry);
+    stopRec();
+    try { if (ws) ws.close(); } catch (e) {}
+    ws = null; liveSince = 0;
+    pill("bad", "Live band hai");
+  }
+
+  /* ---------- taps ---------- */
   let hideT = null;
-  document.addEventListener("click", () => {
-    if (!started) return;
+  document.addEventListener("click", (e) => {
+    if (!started || $("modal").classList.contains("on")) return;
     if (!isFull()) { full(); return; }
     $("ctl").classList.add("on");
     clearTimeout(hideT);
-    hideT = setTimeout(() => $("ctl").classList.remove("on"), 3000);
+    hideT = setTimeout(() => $("ctl").classList.remove("on"), 3500);
   });
-  $("flip").onclick = async (e) => {
-    e.stopPropagation();
+  const stop = (f) => (e) => { e.stopPropagation(); f(e); };
+  $("ytBtn").onclick = stop(() => { $("modal").classList.add("on"); });
+  $("closeM").onclick = stop(() => $("modal").classList.remove("on"));
+  $("liveGo").onclick = stop(goLive);
+  $("liveStop").onclick = stop(() => { if (confirm("Live band karein?")) endLive(); });
+  $("modal").onclick = (e) => e.stopPropagation();
+  $("flip").onclick = stop(async () => {
     facing = facing === "environment" ? "user" : "environment";
     try { await camera(); } catch (err) { facing = facing === "environment" ? "user" : "environment"; await camera().catch(() => {}); }
-  };
-  $("turn").onclick = (e) => {
-    e.stopPropagation();
-    flip = -flip; setDeg();
-    try { localStorage.setItem("cam.flip", String(flip)); } catch (err) {}
-  };
-  $("full").onclick = (e) => { e.stopPropagation(); full(); };
+  });
+  $("turn").onclick = stop(() => { flip = -flip; setDeg(); try { localStorage.setItem("cam.flip", String(flip)); } catch (err) {} });
+  $("full").onclick = stop(full);
 </script>
 </body>
 </html>
