@@ -445,17 +445,24 @@ function newMatch() {
 /* ---------- overlay link ---------- */
 function overlayUrl() { return location.href.replace(/[^/]*(\?.*)?(#.*)?$/, "") + "overlay.html?t=" + S.code; }
 function linkCard() {
-  return '<div class="card"><h2>Live scoreboard link (Streamlabs mein lagayein)</h2>' +
+  return '<div class="card"><h2>Camera wale phone ka link</h2>' +
+    '<div class="link">' + esc(cameraUrl()) + "</div>" +
+    '<button class="btn gold" id="copyc">Camera link copy</button>' +
+    '<div class="note">Ye link camera wale phone par Chrome mein kholein: camera + scoreboard ek saath. Phir Streamlabs ke Screen share se live jayein.</div></div>' +
+    '<div class="card"><h2>Sirf scoreboard ka link (overlay)</h2>' +
     '<div class="link" id="ourl">' + esc(overlayUrl()) + "</div>" +
     '<div class="row"><button class="btn light" id="copy">Link copy</button><button class="btn light" id="prev">Preview</button></div>' +
     '<iframe class="preview hide" id="pf"></iframe>' +
     '<div class="note">Green dot = score live ja raha hai. Red = internet check karein (score phone mein save hai, internet aate hi chala jayega).</div></div>';
 }
+function cameraUrl() { return overlayUrl().replace("overlay.html", "camera.html"); }
+async function copyText(btn, text) {
+  try { await navigator.clipboard.writeText(text); btn.textContent = "Copy ho gaya"; }
+  catch (e) { prompt("Ye link copy karein:", text); }
+}
 function wireLink() {
-  $("copy").onclick = async () => {
-    try { await navigator.clipboard.writeText(overlayUrl()); $("copy").textContent = "Copy ho gaya"; }
-    catch (e) { prompt("Ye link copy karein:", overlayUrl()); }
-  };
+  $("copy").onclick = () => copyText($("copy"), overlayUrl());
+  $("copyc").onclick = () => copyText($("copyc"), cameraUrl());
   $("prev").onclick = () => { const f = $("pf"); if (f.classList.contains("hide")) { f.src = overlayUrl() + "&bg=1"; f.classList.remove("hide"); } else { f.classList.add("hide"); f.src = "about:blank"; } };
 }
 

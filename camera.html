@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Live Camera</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; pointer-events: none; }
+  .start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center; background: #0a1a33; z-index: 10; }
+  .start h1 { font-size: 22px; }
+  .start p { font-size: 15px; color: #b7c4dc; line-height: 1.5; max-width: 460px; }
+  .start button { border: 0; border-radius: 14px; padding: 16px 28px; font-size: 19px; font-weight: 800; background: #ffc21a; color: #0a1a33; }
+  .err { color: #ff8a8f !important; }
+  .ctl { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 5; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .ctl.on { opacity: 1; pointer-events: auto; }
+  .ctl button { border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 700; background: rgba(0,0,0,.6); color: #fff; }
+  .rot { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
+    background: rgba(0,0,0,.85); font-size: 20px; padding: 24px; z-index: 8; }
+  @media (orientation: portrait) { .rot.armed { display: flex; } }
+</style>
+</head>
+<body>
+<video id="v" autoplay playsinline muted></video>
+<iframe id="ov" title="Scoreboard" allowtransparency="true"></iframe>
+
+<div class="ctl" id="ctl">
+  <button id="flip">Camera badlein</button>
+  <button id="full">Full screen</button>
+</div>
+<div class="rot" id="rot">Phone ko horizontal (letaa kar) karein</div>
+
+<div class="start" id="start">
+  <h1>Live camera + scoreboard</h1>
+  <p>Shuru dabayein, camera ki ijazat dein. Phone horizontal rakhein.<br>
+     Screen par ek dafa tap karne se "Camera badlein" ka button aata hai.</p>
+  <button id="go">Shuru</button>
+  <p id="msg"></p>
+</div>
+
+<script>
+  const q = new URLSearchParams(location.search);
+  const code = q.get("t");
+  const $ = (id) => document.getElementById(id);
+  let facing = "environment", stream = null, lock = null;
+
+  if (!code) { $("msg").textContent = "Link mein match code nahi hai. Scorer page se 'Camera link' copy karein."; $("msg").className = "err"; $("go").style.display = "none"; }
+  else $("ov").src = "overlay.html?t=" + encodeURIComponent(code);
+
+  async function camera() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    });
+    const v = $("v");
+    v.srcObject = stream;
+    v.style.transform = facing === "user" ? "scaleX(-1)" : "";
+    await v.play().catch(() => {});
+  }
+
+  async function awake() {
+    try { if ("wakeLock" in navigator) lock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") awake(); });
+
+  async function full() {
+    try { await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
+    try { await screen.orientation.lock("landscape"); } catch (e) {}
+  }
+
+  $("go").onclick = async () => {
+    $("msg").textContent = "";
+    try {
+      await full();
+      await camera();
+      await awake();
+      $("start").style.display = "none";
+      $("rot").classList.add("armed");
+    } catch (e) {
+      $("msg").className = "err";
+      $("msg").textContent = "Camera nahi khula. Chrome ko camera ki ijazat dein (address bar ke taale wale nishan se) aur dobara Shuru dabayein.";
+    }
+  };
+
+  let hideT = null;
+  document.addEventListener("click", (e) => {
+    if ($("start").style.display !== "none") return;
+    $("ctl").classList.add("on");
+    clearTimeout(hideT);
+    hideT = setTimeout(() => $("ctl").classList.remove("on"), 3000);
+  });
+  $("flip").onclick = async (e) => {
+    e.stopPropagation();
+    facing = facing === "environment" ? "user" : "environment";
+    try { await camera(); } catch (err) { facing = facing === "environment" ? "user" : "environment"; await camera().catch(() => {}); }
+  };
+  $("full").onclick = (e) => { e.stopPropagation(); full(); };
+</script>
+</body>
+</html>
