@@ -10,19 +10,32 @@
   html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
   video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
-  iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; pointer-events: none; }
+
+  /* The scoreboard is always drawn landscape. When the screen stays portrait
+     (auto-rotate off) but the phone is held sideways, it is turned 90 degrees
+     so it still reads left to right for the viewer. */
+  iframe { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; border: 0; background: transparent; pointer-events: none; }
+  @media (orientation: portrait) {
+    iframe { top: 50%; left: 50%; width: 100vh; height: 100vw; transform: translate(-50%, -50%) rotate(var(--deg, 90deg)); }
+  }
+
   .start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 14px; padding: 24px; text-align: center; background: #0a1a33; z-index: 10; }
   .start h1 { font-size: 22px; }
   .start p { font-size: 15px; color: #b7c4dc; line-height: 1.5; max-width: 460px; }
   .start button { border: 0; border-radius: 14px; padding: 16px 28px; font-size: 19px; font-weight: 800; background: #ffc21a; color: #0a1a33; }
   .err { color: #ff8a8f !important; }
-  .ctl { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 5; opacity: 0; transition: opacity .3s; pointer-events: none; }
+
+  .hint { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9;
+    background: rgba(10,26,51,.88); border: 2px solid #ffc21a; border-radius: 14px; padding: 14px 20px;
+    font-size: 18px; font-weight: 700; text-align: center; pointer-events: none; display: none; }
+  .hint.on { display: block; }
+  @media (orientation: portrait) { .hint { transform: translate(-50%, -50%) rotate(var(--deg, 90deg)); } }
+
+  .ctl { position: fixed; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5;
+    opacity: 0; transition: opacity .3s; pointer-events: none; }
   .ctl.on { opacity: 1; pointer-events: auto; }
-  .ctl button { border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 700; background: rgba(0,0,0,.6); color: #fff; }
-  .rot { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center;
-    background: rgba(0,0,0,.85); font-size: 20px; padding: 24px; z-index: 8; }
-  @media (orientation: portrait) { .rot.armed { display: flex; } }
+  .ctl button { border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 700; background: rgba(0,0,0,.65); color: #fff; }
 </style>
 </head>
 <body>
@@ -31,14 +44,15 @@
 
 <div class="ctl" id="ctl">
   <button id="flip">Camera badlein</button>
+  <button id="turn">Scoreboard ulta hai? Ghumayein</button>
   <button id="full">Full screen</button>
 </div>
-<div class="rot" id="rot">Phone ko horizontal (letaa kar) karein</div>
+<div class="hint" id="hint">Full screen ke liye<br>screen par kahin bhi tap karein</div>
 
 <div class="start" id="start">
   <h1>Live camera + scoreboard</h1>
-  <p>Shuru dabayein, camera ki ijazat dein. Phone horizontal rakhein.<br>
-     Screen par ek dafa tap karne se "Camera badlein" ka button aata hai.</p>
+  <p>Shuru dabayein aur camera ki ijazat dein.<br>
+     Screen par tap karne se "Camera badlein" ka button aata hai.</p>
   <button id="go">Shuru</button>
   <p id="msg"></p>
 </div>
@@ -47,11 +61,30 @@
   const q = new URLSearchParams(location.search);
   const code = q.get("t");
   const $ = (id) => document.getElementById(id);
-  let facing = "environment", stream = null, lock = null;
+  let facing = "environment", stream = null, started = false;
 
-  if (!code) { $("msg").textContent = "Link mein match code nahi hai. Scorer page se 'Camera link' copy karein."; $("msg").className = "err"; $("go").style.display = "none"; }
-  else $("ov").src = "overlay.html?t=" + encodeURIComponent(code);
+  if (!code) {
+    $("msg").textContent = "Link mein match code nahi hai. Scorer page se 'Camera link' copy karein.";
+    $("msg").className = "err"; $("go").style.display = "none";
+  } else {
+    $("ov").src = "overlay.html?t=" + encodeURIComponent(code);
+  }
 
+  /* ---- which way is up when the screen did not rotate ---- */
+  let side = 1;   // +1: phone turned left (the usual way), -1: turned right
+  let flip = 1;   // the "Ghumayein" button turns it the other way
+  try { flip = localStorage.getItem("cam.flip") === "-1" ? -1 : 1; } catch (e) {}
+  function setDeg() { document.documentElement.style.setProperty("--deg", (90 * side * flip) + "deg"); }
+  setDeg();
+  window.addEventListener("devicemotion", (e) => {
+    const g = e.accelerationIncludingGravity;
+    if (!g || g.x == null) return;
+    // Gravity tells which edge is down even with auto-rotate off.
+    const s = g.x > 6 ? 1 : g.x < -6 ? -1 : side;
+    if (s !== side) { side = s; setDeg(); }
+  });
+
+  /* ---- camera ---- */
   async function camera() {
     if (stream) stream.getTracks().forEach((t) => t.stop());
     stream = await navigator.mediaDevices.getUserMedia({
@@ -63,49 +96,66 @@
     v.style.transform = facing === "user" ? "scaleX(-1)" : "";
     await v.play().catch(() => {});
   }
-
-  async function awake() {
-    try { if ("wakeLock" in navigator) lock = await navigator.wakeLock.request("screen"); } catch (e) {}
-  }
-  // Coming back from another app (Streamlabs): keep the screen on and,
-  // if the phone stopped the camera meanwhile, start it again.
   function cameraDead() {
     const t = stream && stream.getVideoTracks()[0];
     return !t || t.readyState === "ended" || t.muted || $("v").paused;
   }
+
+  /* ---- screen on, full screen, landscape ---- */
+  async function awake() {
+    try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch (e) {}
+  }
+  function isFull() { return !!document.fullscreenElement; }
+  async function full() {
+    try { if (!isFull()) await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
+    try { await screen.orientation.lock("landscape"); } catch (e) {}
+    $("hint").classList.toggle("on", !isFull());
+  }
+  document.addEventListener("fullscreenchange", () => { if (started) $("hint").classList.toggle("on", !isFull()); });
+
+  async function begin(fromTap) {
+    $("msg").textContent = "";
+    try {
+      if (fromTap) await full();
+      await camera();
+      await awake();
+      started = true;
+      $("start").style.display = "none";
+      $("hint").classList.toggle("on", !isFull());
+    } catch (e) {
+      $("start").style.display = "flex";
+      if (fromTap) {
+        $("msg").className = "err";
+        $("msg").textContent = "Camera nahi khula. Chrome ko camera ki ijazat dein (address bar ke taale wale nishan se) aur dobara Shuru dabayein.";
+      }
+    }
+  }
+  $("go").onclick = () => begin(true);
+
+  // Camera allowed before: start by itself, one tap then makes it full screen.
+  (async () => {
+    if (!code) return;
+    try {
+      const p = await navigator.permissions.query({ name: "camera" });
+      if (p.state === "granted") begin(false);
+    } catch (e) {}
+  })();
+
+  /* ---- back from another app: keep it running ---- */
   async function revive() {
     if (!started) return;
     awake();
     if (cameraDead()) { try { await camera(); } catch (e) {} }
   }
-  let started = false;
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") revive(); });
   window.addEventListener("focus", revive);
   setInterval(() => { if (started && document.visibilityState === "visible" && cameraDead()) revive(); }, 3000);
 
-  async function full() {
-    try { await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch (e) {}
-    try { await screen.orientation.lock("landscape"); } catch (e) {}
-  }
-
-  $("go").onclick = async () => {
-    $("msg").textContent = "";
-    try {
-      await full();
-      await camera();
-      await awake();
-      started = true;
-      $("start").style.display = "none";
-      $("rot").classList.add("armed");
-    } catch (e) {
-      $("msg").className = "err";
-      $("msg").textContent = "Camera nahi khula. Chrome ko camera ki ijazat dein (address bar ke taale wale nishan se) aur dobara Shuru dabayein.";
-    }
-  };
-
+  /* ---- taps ---- */
   let hideT = null;
-  document.addEventListener("click", (e) => {
-    if ($("start").style.display !== "none") return;
+  document.addEventListener("click", () => {
+    if (!started) return;
+    if (!isFull()) { full(); return; }
     $("ctl").classList.add("on");
     clearTimeout(hideT);
     hideT = setTimeout(() => $("ctl").classList.remove("on"), 3000);
@@ -114,6 +164,11 @@
     e.stopPropagation();
     facing = facing === "environment" ? "user" : "environment";
     try { await camera(); } catch (err) { facing = facing === "environment" ? "user" : "environment"; await camera().catch(() => {}); }
+  };
+  $("turn").onclick = (e) => {
+    e.stopPropagation();
+    flip = -flip; setDeg();
+    try { localStorage.setItem("cam.flip", String(flip)); } catch (err) {}
   };
   $("full").onclick = (e) => { e.stopPropagation(); full(); };
 </script>
